@@ -1,5 +1,5 @@
 {
-    "name": "codefog/contao-member_export",
+    "name": "dreebit/contao-member_export",
     "description": "member_export extension for Contao Open Source CMS",
     "keywords": ["contao", "member", "export"],
     "type": "contao-module",
