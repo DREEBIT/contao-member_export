@@ -13,6 +13,8 @@
 
 namespace MemberExport;
 
+use Contao\DataContainer;
+
 /**
  * Class MemberExport
  *
@@ -120,7 +122,9 @@ class MemberExport extends \Backend
      */
     protected function exportFile(\Haste\IO\Writer\WriterInterface $objWriter, $blnHeaderFields, $blnRawData)
     {
-        $objMembers = \MemberModel::findAll();
+        $arrOptions = $this->getQueryOptions();
+
+        $objMembers = \MemberModel::findAll($arrOptions);
 
         // Reload if there are no members
         if ($objMembers === null)
@@ -200,5 +204,118 @@ class MemberExport extends \Backend
         $objWriter = new \Haste\IO\Writer\ExcelFileWriter();
         $objWriter->setFormat('Excel2007');
         $this->exportFile($objWriter, $blnHeaderFields, $blnRawData);
+    }
+
+
+    private function getQueryOptions()
+    {
+        $arrOptions = array(
+            'column' => array(),
+        );
+
+        $arrSessionFilter = $this->Session->get('filter');
+
+        if (isset($arrSessionFilter['tl_member']))
+        {
+            $arrFilter = $arrSessionFilter['tl_member'];
+
+            if (isset($arrFilter['limit']) && $arrFilter['limit'] !== 'all')
+            {
+                $arrLimit = explode(',', $arrFilter['limit']);
+                $arrOptions['offset'] = $arrLimit[0];
+                $arrOptions['limit'] = $arrLimit[1];
+            }
+
+            unset($arrFilter['limit']);
+
+            foreach ($arrFilter AS $strKey => $varValue)
+            {
+                if (substr($strKey, 0, 21) == 'haste_dateRangeFilter')
+                {
+                    $strKey = substr($strKey, 22);
+
+                    $rgxp = $GLOBALS['TL_DCA']['tl_member']['fields'][$strKey]['eval']['rgxp'];
+
+                    if (isset($varValue['from']))
+                    {
+                        $from = $this->validateAndGetTstamp($varValue['from'], $rgxp);
+
+                        if ($from)
+                        {
+                            $arrOptions['column'][] = $strKey . '>=?';
+                            $arrOptions['value'][] = $from;
+                        }
+                    }
+
+                    if (isset($varValue['to']))
+                    {
+                        $to = $this->validateAndGetTstamp($varValue['to'], $rgxp, false);
+
+                        if ($to)
+                        {
+                            $arrOptions['column'][] = $strKey . '<=?';
+                            $arrOptions['value'][] = $to;
+                        }
+                    }
+                }
+                else
+                {
+                    $arrOptions['column'][] = $strKey . '=?';
+                    $arrOptions['value'][] = $varValue;
+                }
+            }
+        }
+
+        $arrSearch = $this->Session->get('search');
+
+        if (isset($arrSearch['tl_member']))
+        {
+            $strPattern = "CAST(%s AS CHAR) REGEXP ?";
+
+            if (substr(\Config::get('dbCollation'), -3) == '_ci')
+            {
+                $strPattern = "LOWER(CAST(%s AS CHAR)) REGEXP LOWER(?)";
+            }
+
+            $arrOptions['column'][] = sprintf($strPattern, $arrSearch['tl_member']['field']);
+            $arrOptions['value'][] = $arrSearch['tl_member']['value'];
+        }
+
+        return $arrOptions;
+    }
+
+
+    /**
+     * Validates user input and turns it into a tstamp if it's valid
+     * @param string $value User input
+     * @param string $rgxp
+     * @param bool $from True if beginning of the day, false if end of the day
+     * @return null|integer
+     */
+    private function validateAndGetTstamp($value, $rgxp, $from = true)
+    {
+        // Validate first
+        $method = 'is' . ucfirst($rgxp);
+
+        if (!\Validator::$method($value)) {
+            return null;
+        }
+
+        $format = $GLOBALS['TL_CONFIG'][$rgxp . 'Format'];
+
+        // Determine the correct key for time and date formats
+        if ($rgxp === 'time' || $rgxp === 'datim') {
+            $key = 'tstamp';
+        } else {
+            $key = ($from) ? 'dayBegin' : 'dayEnd';
+        }
+
+        try {
+            $date = new \Date($value, $format);
+        } catch(\Exception $e) {
+            return null;
+        }
+
+        return $date->{$key};
     }
 }
