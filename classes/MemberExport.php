@@ -22,6 +22,12 @@ use Contao\DataContainer;
  */
 class MemberExport extends \Backend
 {
+    protected $fieldsBlacklist = array(
+        'password',
+        'assignDir',
+        'homeDir'
+    );
+
 
     /**
      * Generate a form to choose the export method
@@ -138,15 +144,24 @@ class MemberExport extends \Backend
         if ($blnHeaderFields)
         {
             $arrHeaderFields = array();
+            $arrDcaFields = $GLOBALS['TL_DCA']['tl_member']['fields'];
 
-            foreach ($GLOBALS['TL_DCA']['tl_member']['fields'] as $strField => $arrField)
+            foreach ($objMembers->first()->row() as $strField => $value)
             {
-                $arrHeaderFields[] = ($blnRawData || !$arrField['label'][0]) ? $strField : $arrField['label'][0];
+                if (!in_array($strField, $this->fieldsBlacklist) && isset($arrDcaFields[$strField]))
+                {
+                    $arrField = $arrDcaFields[$strField];
+                    $arrHeaderFields[] = ($blnRawData || !$arrField['label'][0]) ? $strField : $arrField['label'][0];
+                }
             }
+
+            $arrHeaderFields[] = 'backendLink';
 
             $objReader->setHeaderFields($arrHeaderFields);
             $objWriter->enableHeaderFields();
         }
+
+        $objWriter->setRowCallback(array($this, 'prepareRowCallback'));
 
         // Format the values
         if (!$blnRawData)
@@ -157,6 +172,8 @@ class MemberExport extends \Backend
                 {
                     $arrRow[$k] = \Haste\Util\Format::dcaValue('tl_member', $k, $v);
                 }
+
+                $arrRow = $this->prepareRowCallback($arrRow);
 
                 return $arrRow;
             });
@@ -204,6 +221,19 @@ class MemberExport extends \Backend
         $objWriter = new \Haste\IO\Writer\ExcelFileWriter();
         $objWriter->setFormat('Excel2007');
         $this->exportFile($objWriter, $blnHeaderFields, $blnRawData);
+    }
+
+
+    public function prepareRowCallback($arrRow)
+    {
+        foreach ($this->fieldsBlacklist AS $strField)
+        {
+            unset($arrRow[$strField]);
+        }
+
+        $arrRow['backendLink'] = \Environment::get('base') . 'contao/main.php?do=member&act=edit&rt=&id=' . $arrRow['id'];
+
+        return $arrRow;
     }
 
 
